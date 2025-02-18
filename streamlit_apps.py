@@ -2,6 +2,7 @@ import streamlit as st
 import cv2
 import numpy as np
 import tempfile
+import json
 from PIL import Image
 from streamlit_drawable_canvas import st_canvas
 
@@ -26,6 +27,12 @@ if uploaded_file is not None:
             st.session_state.image_points = []
         if 'confirmed' not in st.session_state:
             st.session_state.confirmed = False
+
+        # Inisialisasi input panjang dan lebar jalan jika belum ada
+        if 'road_length' not in st.session_state:
+            st.session_state.road_length = 0.0
+        if 'road_width' not in st.session_state:
+            st.session_state.road_width = 0.0
 
         # Konversi frame ke format yang bisa ditampilkan
         frame_copy = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -60,20 +67,26 @@ if uploaded_file is not None:
 
                 st.session_state.image_points = points
 
-        # Tombol untuk mengonfirmasi titik
+        # Input panjang dan lebar jalan
+        st.session_state.road_length = st.number_input("Masukkan panjang jalan (meter)", min_value=0.0, format="%.2f")
+        st.session_state.road_width = st.number_input("Masukkan lebar jalan (meter)", min_value=0.0, format="%.2f")
+
+        # Tombol untuk mengonfirmasi titik dan input jalan
         if st.button("Tentukan Titik"):
             if len(st.session_state.image_points) == 4:
                 st.session_state.confirmed = True
             else:
                 st.error("Harap pilih tepat 4 titik sebelum menekan tombol ini.")
 
-        # Menampilkan titik hanya jika sudah dikonfirmasi
+        # Menampilkan output dalam format JSON jika sudah dikonfirmasi
         if st.session_state.confirmed:
-            image_points_np = np.array(st.session_state.image_points, dtype=np.float32)
-            st.write("Koordinat yang dipilih:", image_points_np)
+            json_output = {
+                "koordinat": {
+                    f"titik_{i+1}": list(st.session_state.image_points[i])
+                    for i in range(4)
+                },
+                "panjang": st.session_state.road_length,
+                "lebar": st.session_state.road_width
+            }
 
-        # Tombol reset untuk menghapus titik yang dipilih dan status konfirmasi
-        if st.button("Reset Pilihan"):
-            st.session_state.image_points = []
-            st.session_state.confirmed = False
-            st.experimental_set_query_params()  # Refresh halaman secara tidak langsung
+            st.json(json.dumps(json_output, indent=4))
