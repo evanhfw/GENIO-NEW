@@ -3,3 +3,6 @@ ultralytics
 supervision
 numpy
 streamlit==1.40
+python-multipart
+fastapi
+uvicorn

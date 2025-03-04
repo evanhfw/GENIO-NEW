@@ -1,28 +1,24 @@
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 import cv2
 from ultralytics import YOLO
 import supervision as sv
 import numpy as np
 from collections import defaultdict, deque
+import uuid
+import threading
 
 app = FastAPI()
 
-# Configuration
-HLS_STREAM_URL = "https://cctvjss.jogjakota.go.id/atcs/ATCS_Kleringan_Abu_Bakar_Ali.stream/playlist.m3u8"
-SOURCE = np.array([[486, 153], [610, 149], [881, 275], [505, 286]])
-TARGET_WIDTH = 5
-TARGET_HEIGHT = 44
-
-TARGET = np.array([
-    [0, 0],
-    [TARGET_WIDTH - 1, 0],
-    [TARGET_WIDTH - 1, TARGET_HEIGHT - 1],
-    [0, TARGET_HEIGHT - 1],
-])
-
-# Initialize models and components
-model = YOLO(r"models/yolo11n_vehicle.pt")
+# Configuration storage with default values
+config = {
+    "hls_stream_url": "https://cctvjss.jogjakota.go.id/atcs/ATCS_Kleringan_Abu_Bakar_Ali.stream/playlist.m3u8",
+    "source": np.array([[486, 153], [610, 149], [881, 275], [505, 286]]),
+    "target_width": 5,
+    "target_height": 44,
+    "view_transformer": None
+}
+config_lock = threading.Lock()
 
 class ViewTransformer:
     def __init__(self, source: np.ndarray, target: np.ndarray):
@@ -35,13 +31,29 @@ class ViewTransformer:
         transformed_points = cv2.perspectiveTransform(reshaped_points, self.m)
         return transformed_points.reshape(-1, 2)
 
-view_transformer = ViewTransformer(source=SOURCE, target=TARGET)
+
+# Initialize view transformer
+with config_lock:
+    target_points = np.array([
+        [0, 0],
+        [config["target_width"] - 1, 0],
+        [config["target_width"] - 1, config["target_height"] - 1],
+        [0, config["target_height"] - 1],
+    ])
+    config["view_transformer"] = ViewTransformer(source=config["source"], target=target_points)
+
+
+view_transformer = ViewTransformer(source=config["source"], target=target_points)
 byte_tracker = sv.ByteTrack()
 coordinates = defaultdict(lambda: deque(maxlen=30))
+model = YOLO(r"models/yolo11n_vehicle.pt")
 
 def generate_frames():
-    cap = cv2.VideoCapture(HLS_STREAM_URL)
-    polygon_zone = sv.PolygonZone(polygon=SOURCE)
+    cap = cv2.VideoCapture(config["hls_stream_url"])
+    
+    with config_lock:  # Lock while initializing components
+        polygon_zone = sv.PolygonZone(polygon=config["source"])
+        vt = config["view_transformer"]
     
     while cap.isOpened():
         ret, frame = cap.read()
@@ -65,7 +77,7 @@ def generate_frames():
             continue
 
         try:
-            points = view_transformer.transform_points(points)
+            points = vt.transform_points(points)
         except Exception as e:
             print(f"Error transforming points: {e}")
             continue
@@ -82,7 +94,7 @@ def generate_frames():
                 labels.append(f"#{tracker_id}")
 
         # Annotate frame
-        annotated_frame = sv.draw_polygon(scene=frame, polygon=SOURCE, color=sv.Color.RED)
+        annotated_frame = sv.draw_polygon(scene=frame, polygon=config["source"], color=sv.Color.RED)
         annotated_frame = sv.BoxAnnotator().annotate(scene=annotated_frame, detections=detections)
         annotated_frame = sv.LabelAnnotator().annotate(scene=annotated_frame, detections=detections, labels=labels)
 
@@ -108,3 +120,49 @@ async def home():
 @app.get('/video_feed')
 def video_feed():
     return StreamingResponse(generate_frames(), media_type='multipart/x-mixed-replace; boundary=frame')
+
+@app.get("/config")
+def get_config():
+    """Get current configuration"""
+    return {
+        "hls_stream_url": config["hls_stream_url"],
+        "source": config["source"].tolist(),
+        "target_width": config["target_width"],
+        "target_height": config["target_height"]
+    }
+
+@app.post("/config")
+def update_config(
+    hls_stream_url: str = None,
+    source: list = None,
+    target_width: int = None,
+    target_height: int = None
+):
+    """Update configuration parameters"""
+    with config_lock:
+        if hls_stream_url:
+            config["hls_stream_url"] = hls_stream_url
+        
+        if source:
+            try:
+                config["source"] = np.array(source).reshape(4, 2)
+            except:
+                raise HTTPException(400, "Invalid source format. Expected 4 points [x,y]")
+        
+        if target_width or target_height:
+            config["target_width"] = target_width or config["target_width"]
+            config["target_height"] = target_height or config["target_height"]
+            
+            # Regenerate target points and view transformer
+            target_points = np.array([
+                [0, 0],
+                [config["target_width"] - 1, 0],
+                [config["target_width"] - 1, config["target_height"] - 1],
+                [0, config["target_height"] - 1],
+            ])
+            config["view_transformer"] = ViewTransformer(
+                source=config["source"], 
+                target=target_points
+            )
+        
+        return {"message": "Configuration updated", "new_config": get_config()}
