@@ -214,9 +214,7 @@ def generate_frames_api():
         detections = byte_tracker.update_with_detections(detections)
         
         points = detections.get_anchors_coordinates(anchor=sv.Position.BOTTOM_CENTER)
-        
-        # Sama seperti generate_frames tetapi hanya untuk API streaming
-        # ...
+    
         
         # Annotate frame
         with config_lock:
