@@ -1,7 +1,45 @@
 import { useState } from "react";
 import "./App.css";
+import HLSPlayer from "./HLSPlayer";
 
 function App() {
+  const [activeTab, setActiveTab] = useState("hls-player");
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case "hls-player":
+        return <HLSPlayer />;
+      case "video-analyzer":
+        return <VideoAnalyzer />;
+      default:
+        return <HLSPlayer />;
+    }
+  };
+
+  return (
+    <div className="App">
+      <nav className="app-nav">
+        <button
+          className={activeTab === "hls-player" ? "active" : ""}
+          onClick={() => setActiveTab("hls-player")}
+        >
+          HLS Player
+        </button>
+        <button
+          className={activeTab === "video-analyzer" ? "active" : ""}
+          onClick={() => setActiveTab("video-analyzer")}
+        >
+          Video Analyzer
+        </button>
+      </nav>
+
+      <div className="content-container">{renderContent()}</div>
+    </div>
+  );
+}
+
+// Original Video Analyzer Component
+function VideoAnalyzer() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [status, setStatus] = useState("");
   const [results, setResults] = useState(null);
@@ -84,7 +122,7 @@ function App() {
   };
 
   return (
-    <div className="App">
+    <div>
       <h1>Video Speed Detection Analyzer</h1>
 
       <div className="upload-section">

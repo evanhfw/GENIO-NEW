@@ -10,8 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@videojs/http-streaming": "^3.17.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "video.js": "^8.22.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.19.0",
